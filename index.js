@@ -153,42 +153,10 @@ app.post('/webhook', async (req, res) => {
         }
 
         const chatId = message.chat.id;
-        const userId = message.from.id;
-        const text = message.text;
-        const firstName = message.from.first_name || '';
-        const lastName = message.from.last_name || '';
 
-        // Filtrar /start
-        if (text.toLowerCase().includes('/start')) {
-            await sendTelegramMessage(chatId, '👋 ¡Hola! Soy el asistente virtual de Authenology. ¿En qué puedo ayudarte hoy?');
-            return res.status(200).send('Ignored /start');
-        }
-
-        console.log(`📩 Nuevo mensaje de usuario ${userId}: "${text}"`);
-
-        // Guardar en Sheets
-        const rowNumber = await saveToSheets(userId, text, firstName, lastName);
-        console.log(`📝 Mensaje guardado en fila: ${rowNumber}`);
-
-        // Buscar historial
-        const userHistoryRows = await searchUserHistory(userId);
-        console.log(`🔍 Historial encontrado: ${userHistoryRows.length} filas`);
-
-        // Agregar historial
-        const historyText = aggregateHistoryText(userHistoryRows);
-
-        // Llamar a Gemini
-        const aiResponse = await callGeminiAI(historyText, text);
-        console.log(`🤖 Respuesta de Gemini: ${aiResponse.substring(0, 50)}...`);
-
-        // Actualizar Sheets con respuesta
-        await updateSheetsWithAiResponse(rowNumber, aiResponse);
-        console.log(`✅ Respuesta guardada en Sheets`);
-
-        // Responder en Telegram
-        await sendTelegramMessage(chatId, aiResponse);
-
-        res.status(200).send('OK');
+        // RESPUESTA DE TEST: verifica solo conectividad
+        await sendTelegramMessage(chatId, '¡Echo test! El webhook llegó ok.');
+        return res.status(200).send('OK');
     } catch (error) {
         console.error('❌ Error en el webhook:', error.message);
         res.status(500).send('Error interno del servidor');
