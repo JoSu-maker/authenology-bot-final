@@ -211,7 +211,16 @@ async function saveToSheets(userId, userMessage, firstName, lastName) {
         }
     });
 
-    return response.data.tableRange.split('!')[1].split(':')[1].replace(/\D/g, '');
+    // La API de append responde con "updates": {"updatedRange": "Sheet1!A10:C10"...}
+    const updates = response.data.updates;
+    if (updates && updates.updatedRange) {
+        // Tomo el número de la fila final del rango actualizado
+        const match = updates.updatedRange.match(/([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+        if (match) {
+            return match[4]; // Ejemplo: A10:C10 => 10
+        }
+    }
+    throw new Error('No se pudo obtener correctamente el índice de la fila guardada en Sheets');
 }
 
 async function searchUserHistory(userId) {
@@ -223,7 +232,8 @@ async function searchUserHistory(userId) {
     });
 
     const rows = response.data.values || [];
-    return rows.filter(row => row[0] == userId);
+    // Filtra solo filas válidas donde row[0] existe y coincide
+    return rows.filter(row => row[0] && row[0] == userId);
 }
 
 function aggregateHistoryText(rows) {
