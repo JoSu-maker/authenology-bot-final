@@ -7,6 +7,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// 🔐 Lee las credenciales desde .env
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
@@ -17,6 +18,7 @@ if (!TELEGRAM_BOT_TOKEN || !SPREADSHEET_ID || !GOOGLE_SHEETS_API_KEY || !GEMINI_
     process.exit(1);
 }
 
+// 🧠 Instrucciones del sistema para Gemini (copiadas de tu JSON)
 const SYSTEM_INSTRUCTION = `Eres un asistente de AUTHENTICSING, C.A con la marca comercial authenology, que responde a las preguntas de los usuarios y informa sobre los servicios de nuestra plataforma y sus precios, trata de siempre dar informacion clara y precisa y sin tantas decoraciones en el chat por ejemplo no pongas tantos asteriscos que eso incomoda al usuario visualmente. Eres un asistente virtual amable y profesional de AUTHENTICSING, C.A. con la marca comercial AUTHENOLOGY aqui tienes una serie de preguntas para los usuario que vayas a asistir siempre trata de complacer lo mejor posible al usuario.
 
    Preguntas Frecuentes: Authenology - Tu Firma Electrónica en Venezuela
@@ -146,10 +148,8 @@ app.post('/webhook', async (req, res) => {
         const update = req.body;
         const message = update.message;
 
-        if (!message || !message.text) return res.status(200).send('No message');
-        if (text.toLowerCase().includes('/start')) {
-            await sendTelegramMessage(chatId, '👋 ¡Hola! Soy el asistente virtual de Authenology. ¿En qué puedo ayudarte hoy?');
-            return res.status(200).send('Ignored /start');
+        if (!message || !message.text) {
+            return res.status(200).send('No message or text');
         }
 
         const chatId = message.chat.id;
@@ -158,23 +158,48 @@ app.post('/webhook', async (req, res) => {
         const firstName = message.from.first_name || '';
         const lastName = message.from.last_name || '';
 
+        // Filtrar /start
+        if (text.toLowerCase().includes('/start')) {
+            await sendTelegramMessage(chatId, '👋 ¡Hola! Soy el asistente virtual de Authenology. ¿En qué puedo ayudarte hoy?');
+            return res.status(200).send('Ignored /start');
+        }
+
+        console.log(`📩 Nuevo mensaje de usuario ${userId}: "${text}"`);
+
+        // Guardar en Sheets
         const rowNumber = await saveToSheets(userId, text, firstName, lastName);
+        console.log(`📝 Mensaje guardado en fila: ${rowNumber}`);
+
+        // Buscar historial
         const userHistoryRows = await searchUserHistory(userId);
+        console.log(`🔍 Historial encontrado: ${userHistoryRows.length} filas`);
+
+        // Agregar historial
         const historyText = aggregateHistoryText(userHistoryRows);
+
+        // Llamar a Gemini
         const aiResponse = await callGeminiAI(historyText, text);
+        console.log(`🤖 Respuesta de Gemini: ${aiResponse.substring(0, 50)}...`);
+
+        // Actualizar Sheets con respuesta
         await updateSheetsWithAiResponse(rowNumber, aiResponse);
+        console.log(`✅ Respuesta guardada en Sheets`);
+
+        // Responder en Telegram
         await sendTelegramMessage(chatId, aiResponse);
 
         res.status(200).send('OK');
     } catch (error) {
-        console.error('❌ Error:', error.message);
-        res.status(500).send('Error interno');
+        console.error('❌ Error en el webhook:', error.message);
+        res.status(500).send('Error interno del servidor');
     }
 });
 
+// --- Funciones Auxiliares ---
+
 async function saveToSheets(userId, userMessage, firstName, lastName) {
     const now = new Date().toISOString();
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Sheet1:append?valueInputOption=USER_ENTERED`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Sheet1:append?valueInputOption=USER_ENTERED&key=${GOOGLE_SHEETS_API_KEY}`;
 
     const data = {
         values: [[userId, userMessage, '', firstName, lastName, now]]
@@ -182,7 +207,6 @@ async function saveToSheets(userId, userMessage, firstName, lastName) {
 
     const response = await axios.post(url, data, {
         headers: {
-            'Authorization': `Bearer ${GOOGLE_SHEETS_API_KEY}`,
             'Content-Type': 'application/json'
         }
     });
@@ -191,10 +215,10 @@ async function saveToSheets(userId, userMessage, firstName, lastName) {
 }
 
 async function searchUserHistory(userId) {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Sheet1`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Sheet1?key=${GOOGLE_SHEETS_API_KEY}`;
     const response = await axios.get(url, {
         headers: {
-            'Authorization': `Bearer ${GOOGLE_SHEETS_API_KEY}`
+            'Content-Type': 'application/json'
         }
     });
 
@@ -233,14 +257,14 @@ async function callGeminiAI(historyText, latestUserMessage) {
         });
         return response.data.candidates[0].content.parts[0].text.trim();
     } catch (error) {
-        console.error('Error en Gemini:', error.response?.data || error.message);
-        return "Lo siento, hubo un error al procesar tu solicitud. Por favor, inténtalo de nuevo más tarde.";
+        console.error('❌ Error en Gemini API:', error.response?.data || error.message);
+        throw new Error('Error al comunicarse con Gemini AI');
     }
 }
 
 async function updateSheetsWithAiResponse(rowNumber, aiResponse) {
     const range = `Sheet1!C${rowNumber}`;
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}?valueInputOption=USER_ENTERED&key=${GOOGLE_SHEETS_API_KEY}`;
 
     const data = {
         values: [[aiResponse]]
@@ -248,7 +272,6 @@ async function updateSheetsWithAiResponse(rowNumber, aiResponse) {
 
     await axios.put(url, data, {
         headers: {
-            'Authorization': `Bearer ${GOOGLE_SHEETS_API_KEY}`,
             'Content-Type': 'application/json'
         }
     });
@@ -265,4 +288,5 @@ async function sendTelegramMessage(chatId, text) {
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+    console.log(`🔗 Configura tu webhook de Telegram con: https://TU_DOMINIO/webhook`);
 });
