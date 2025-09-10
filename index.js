@@ -155,8 +155,6 @@ app.post('/webhook', async (req, res) => {
         const chatId = message.chat.id;
         const userId = message.from.id;
         const text = message.text;
-        const firstName = message.from.first_name || '';
-        const lastName = message.from.last_name || '';
 
         // Filtrar /start
         if (text.toLowerCase().includes('/start')) {
@@ -166,24 +164,9 @@ app.post('/webhook', async (req, res) => {
 
         console.log(`📩 Nuevo mensaje de usuario ${userId}: "${text}"`);
 
-        // Guardar en Sheets
-        const rowNumber = await saveToSheets(userId, text, firstName, lastName);
-        console.log(`📝 Mensaje guardado en fila: ${rowNumber}`);
-
-        // Buscar historial
-        const userHistoryRows = await searchUserHistory(userId);
-        console.log(`🔍 Historial encontrado: ${userHistoryRows.length} filas`);
-
-        // Agregar historial
-        const historyText = aggregateHistoryText(userHistoryRows);
-
-        // Llamar a Gemini
-        const aiResponse = await callGeminiAI(historyText, text);
+        // Solo responde usando SYSTEM_INSTRUCTION y el mensaje actual
+        const aiResponse = await callGeminiAI('', text);
         console.log(`🤖 Respuesta de Gemini: ${aiResponse.substring(0, 50)}...`);
-
-        // Actualizar Sheets con respuesta
-        await updateSheetsWithAiResponse(rowNumber, aiResponse);
-        console.log(`✅ Respuesta guardada en Sheets`);
 
         // Responder en Telegram
         await sendTelegramMessage(chatId, aiResponse);
